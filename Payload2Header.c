@@ -1,4 +1,4 @@
-// To compile : clang -Weverything -fsanitize=address Payload2Header.c -o Payload2Header
+// To compile : clang -Weverything Payload2Header.c -o Payload2Header
 
 #include <stdio.h>
 #include <errno.h>
@@ -104,6 +104,6 @@ int	main(int argc, char **argv)
 	close(fd_header);
 	close(fd_bin);
 
-	printf("File writed");
+	printf("File writed\n");
 	return (0);
 }
