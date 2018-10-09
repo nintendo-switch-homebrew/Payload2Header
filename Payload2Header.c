@@ -58,7 +58,9 @@ static int	create_header(char *name)
 static void	convert(int bin, int header)
 {
 	unsigned char	*buf_read = NULL;
-	struct stat	st;
+	struct stat		st;
+	int				len = 0;
+	unsigned char	buf[(13 * 6) + 2] = {0}; // store 13 octets * 6 + 2 for \n\t
 
 	check_error("fstat", fstat(bin, &st));
 
@@ -71,12 +73,19 @@ static void	convert(int bin, int header)
 	dprintf(header, "#include <Arduino.h>\n\n#define FUSEE_BIN_SIZE %ld\nconst PROGMEM byte fuseeBin[FUSEE_BIN_SIZE] = {\n\t", st.st_size);
 
 	// write payload in hex
-	// this loop need to be optimized too many syscall in dprintf (see strace for more info)
 	for (int i = 0; i < st.st_size; i++) {
-		if (!(i % 16) && i != 0)
-			dprintf(header, "\n\t");
-		dprintf(header, "0x%02x, ", buf_read[i]);
+		if (!(i % 12) && i != 0) {
+			len += sprintf((char *)buf + len, "\n\t");
+			write(header, &buf, (size_t)len);
+			memset(&buf, 0, sizeof(buf));
+			len = 0;
+		}
+		/*dprintf(header, "0x%02x, ", buf_read[i]);*/
+		len += sprintf((char *)buf + len, "0x%02x, ", buf_read[i]);
 	}
+	// write if buffer is not empty
+	if (len != 0)
+		write(header, &buf, (size_t)len);
 	dprintf(header, "\n};\n");
 	free(buf_read);
 }
