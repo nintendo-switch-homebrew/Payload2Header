@@ -22,11 +22,11 @@ static void	check_error(char *syscall, int error)
 	}
 }
 
-static int	create_header(char *name)
+static FILE	*create_header(char *name)
 {
 	char	*header_name = NULL;
 	char	*ptr = NULL;
-	int		fd = 0;
+	FILE	*fd = NULL;
 
 	// if name is the entire path, keep only the name
 	ptr = strrchr(name, '/');
@@ -47,53 +47,62 @@ static int	create_header(char *name)
 		strcat(header_name, ".h");
 
 	// Create header file
-	fd = open(header_name, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-	check_error("open", fd);
+	fd = fopen(header_name, "w+");
+	if (fd == NULL) {
+		perror("fopen");
+		return (NULL);
+	}
+	/*check_error("open", fd);*/
 
 	free(header_name);
 
 	return (fd);
 }
 
-static void	convert(int bin, int header)
+static void	convert(FILE *bin, FILE *header)
 {
 	unsigned char	*buf_read = NULL;
-	struct stat		st;
+	long			size = 0;
 	int				len = 0;
 	unsigned char	buf[(13 * 6) + 2] = {0}; // store 13 octets * 6 + 2 for \n\t
 
-	check_error("fstat", fstat(bin, &st));
+	/*check_error("fstat", fstat(bin, &st));*/
+	if (fseek(bin, 0L, SEEK_END) == -1) {
+		perror("fseek");
+		exit(errno);
+	}
+	size = ftell(bin);
+	rewind(bin);
 
 	// don't need to check if calloc == NULL
-	buf_read = (unsigned char *)calloc(sizeof(char), (size_t)st.st_size);
+	buf_read = (unsigned char *)calloc(sizeof(char), (size_t)size);
 
-	check_error("read", (int)read(bin, buf_read, (size_t)st.st_size));
+	fread(buf_read, (size_t)size, sizeof(char), bin);
 
 	// Write first part
-	dprintf(header, "#include <Arduino.h>\n\n#define FUSEE_BIN_SIZE %ld\nconst PROGMEM byte fuseeBin[FUSEE_BIN_SIZE] = {\n\t", st.st_size);
+	fprintf(header, "#include <Arduino.h>\n\n#define FUSEE_BIN_SIZE %ld\nconst PROGMEM byte fuseeBin[FUSEE_BIN_SIZE] = {\n\t", size);
 
 	// write payload in hex
-	for (int i = 0; i < st.st_size; i++) {
+	for (int i = 0; i < size; i++) {
 		if (!(i % 12) && i != 0) {
 			len += sprintf((char *)buf + len, "\n\t");
-			write(header, &buf, (size_t)len);
+			fprintf(header, "%s", buf);
 			memset(&buf, 0, sizeof(buf));
 			len = 0;
 		}
-		/*dprintf(header, "0x%02x, ", buf_read[i]);*/
 		len += sprintf((char *)buf + len, "0x%02x, ", buf_read[i]);
 	}
 	// write if buffer is not empty
 	if (len != 0)
-		write(header, &buf, (size_t)len);
-	dprintf(header, "\n};\n");
+		fprintf(header, "%s", buf);
+	fprintf(header, "\n};\n");
 	free(buf_read);
 }
 
 int	main(int argc, char **argv)
 {
-	int		fd_bin = 0;
-	int		fd_header = 0;
+	FILE	*fd_header = 0;
+	FILE	*fd_bin = NULL;
 
 	if (argc != 2){
 		usage(argv[0]);
@@ -101,17 +110,22 @@ int	main(int argc, char **argv)
 	}
 
 	// open file ton convert
-	fd_bin = open(argv[1], O_RDONLY);
-	check_error("open", fd_bin);
+	fd_bin = fopen(argv[1], "r");
+	if (fd_bin == NULL) {
+		perror("fopen");
+		return (errno);
+	}
 
 	// create .h
 	fd_header = create_header(argv[1]);
+	if (fd_header == NULL)
+		return (errno);
 
 	// write payload in file converted
 	convert(fd_bin, fd_header);
 
-	close(fd_header);
-	close(fd_bin);
+	fclose(fd_header);
+	fclose(fd_bin);
 
 	printf("File writed\n");
 	return (0);
